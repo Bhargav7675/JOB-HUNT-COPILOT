@@ -68,7 +68,7 @@ export function SettingsForm({ initial }: ProfileFormProps) {
   }
 
   const scheduleHint = useMemo(() => {
-    return `Preferred time: ${formatHourLabel(form.scheduleHourLocal)} (${form.scheduleTimezone}). The agent will scout, rank, tailor, and auto-apply on that cadence.`;
+    return `Preferred time: ${formatHourLabel(form.scheduleHourLocal)} (${form.scheduleTimezone}). The agent will scout, rank, tailor, and autofill applications on that cadence.`;
   }, [form.scheduleHourLocal, form.scheduleTimezone]);
 
   async function save() {
@@ -117,7 +117,7 @@ export function SettingsForm({ initial }: ProfileFormProps) {
           <input className="field" value={form.email} onChange={(e) => set("email", e.target.value)} />
         </div>
         <div>
-          <label className="label">Phone (for auto-apply forms)</label>
+          <label className="label">Phone (for application autofill)</label>
           <input className="field" value={form.phone || ""} onChange={(e) => set("phone", e.target.value)} placeholder="+1…" />
         </div>
         <div>
@@ -267,17 +267,18 @@ export function SettingsForm({ initial }: ProfileFormProps) {
           </div>
         </div>
         <p className="text-xs leading-relaxed muted">
-          Hosted plan runs once daily (includes refresh + auto-apply). For exact-hour runs, ping{" "}
+          Hosted plan runs once daily (includes refresh + autofill). For exact-hour runs, ping{" "}
           <code className="text-[var(--ink)]">/api/cron/run?strict=1</code> hourly with your cron secret.
         </p>
       </div>
 
       <div className="space-y-4 rounded-2xl border border-[var(--accent)] bg-[var(--accent-soft)] p-4">
         <div>
-          <h3 className="display text-xl">Auto-apply</h3>
+          <h3 className="display text-xl">Autofill applications</h3>
           <p className="mt-1 text-sm muted">
-            When enabled, the agent submits applications on Greenhouse / Lever / Ashby-style boards using your tailored
-            resume. CAPTCHA or login walls may block some boards.
+            When enabled, the agent fills and submits applications on supported ATS portals (Greenhouse, Lever, Ashby)
+            using your profile and tailored resume — only for roles that meet your score thresholds below. CAPTCHA,
+            login walls, or custom questionnaires may still block some boards. Outreach stays copy-only.
           </p>
         </div>
         <label className="flex items-center gap-2 text-sm font-semibold">
@@ -286,7 +287,7 @@ export function SettingsForm({ initial }: ProfileFormProps) {
             checked={form.autoApplyEnabled}
             onChange={(e) => set("autoApplyEnabled", e.target.checked)}
           />
-          Enable auto-apply during agent runs
+          Enable autofill during agent runs
         </label>
         <div className="grid gap-4 sm:grid-cols-3">
           <div>

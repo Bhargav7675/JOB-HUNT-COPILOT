@@ -7,6 +7,20 @@ export type ScoutOptions = {
   maxAgeDays: number;
   adzunaAppId?: string | null;
   adzunaAppKey?: string | null;
+  usajobsApiKey?: string | null;
+  usajobsUserAgent?: string | null;
+};
+
+export type PortalScoutStat = {
+  name: string;
+  count: number;
+  status: "ok" | "empty" | "error" | "skipped";
+  detail?: string;
+};
+
+export type ScoutResult = {
+  jobs: ScoutedJob[];
+  portals: PortalScoutStat[];
 };
 
 function withinDays(date: Date | null | undefined, maxAgeDays: number) {
@@ -58,6 +72,10 @@ function matchesLocation(job: ScoutedJob, location?: string | null) {
   if (tokens.length === 0) return true;
   // Remote preference
   if (tokens.includes("remote") && /remote/i.test(hay)) return true;
+  // Broad US preference — keep US-relevant roles
+  if (tokens.includes("united") || tokens.includes("states") || tokens.includes("usa")) {
+    return isUsRelevant(job);
+  }
   const hits = tokens.filter((t) => hay.includes(t)).length;
   return hits >= 1;
 }
@@ -113,6 +131,44 @@ function passesFilters(job: ScoutedJob, options: ScoutOptions) {
     matchesLocation(job, options.location) &&
     matchesExperience(job, options.experienceYears)
   );
+}
+
+function displayName(token: string) {
+  return token
+    .split(/[-_]/)
+    .map((p) => (p.length <= 3 ? p.toUpperCase() : p.charAt(0).toUpperCase() + p.slice(1)))
+    .join(" ");
+}
+
+async function settlePortal(
+  name: string,
+  fn: () => Promise<ScoutedJob[]>,
+  skipReason?: string,
+): Promise<{ jobs: ScoutedJob[]; stat: PortalScoutStat }> {
+  if (skipReason) {
+    return { jobs: [], stat: { name, count: 0, status: "skipped", detail: skipReason } };
+  }
+  try {
+    const jobs = await fn();
+    return {
+      jobs,
+      stat: {
+        name,
+        count: jobs.length,
+        status: jobs.length > 0 ? "ok" : "empty",
+      },
+    };
+  } catch (error) {
+    return {
+      jobs: [],
+      stat: {
+        name,
+        count: 0,
+        status: "error",
+        detail: error instanceof Error ? error.message.slice(0, 120) : "failed",
+      },
+    };
+  }
 }
 
 export async function scoutRemotive(options: ScoutOptions): Promise<ScoutedJob[]> {
@@ -227,39 +283,35 @@ export async function scoutRemoteOK(options: ScoutOptions): Promise<ScoutedJob[]
 }
 
 export async function scoutJobicy(options: ScoutOptions): Promise<ScoutedJob[]> {
-  try {
-    const res = await fetch("https://jobicy.com/api/v2/remote-jobs?count=50", {
-      signal: AbortSignal.timeout(20000),
-      headers: { "User-Agent": "JobHuntCopilot/1.0" },
-    });
-    if (!res.ok) return [];
-    const data = (await res.json()) as {
-      jobs?: Array<{
-        id: number | string;
-        url: string;
-        jobTitle: string;
-        companyName: string;
-        jobGeo?: string;
-        jobDescription?: string;
-        pubDate?: string;
-      }>;
-    };
-    return (data.jobs ?? [])
-      .map((j) => ({
-        externalId: `jobicy:${j.id}`,
-        source: "Jobicy",
-        title: j.jobTitle,
-        company: j.companyName,
-        location: j.jobGeo || "Remote",
-        remoteType: "remote" as const,
-        url: j.url,
-        description: (j.jobDescription || "").replace(/<[^>]+>/g, " ").slice(0, 8000),
-        postedAt: j.pubDate ? new Date(j.pubDate) : null,
-      }))
-      .filter((j) => passesFilters(j, options));
-  } catch {
-    return [];
-  }
+  const res = await fetch("https://jobicy.com/api/v2/remote-jobs?count=50", {
+    signal: AbortSignal.timeout(20000),
+    headers: { "User-Agent": "JobHuntCopilot/1.0" },
+  });
+  if (!res.ok) return [];
+  const data = (await res.json()) as {
+    jobs?: Array<{
+      id: number | string;
+      url: string;
+      jobTitle: string;
+      companyName: string;
+      jobGeo?: string;
+      jobDescription?: string;
+      pubDate?: string;
+    }>;
+  };
+  return (data.jobs ?? [])
+    .map((j) => ({
+      externalId: `jobicy:${j.id}`,
+      source: "Jobicy",
+      title: j.jobTitle,
+      company: j.companyName,
+      location: j.jobGeo || "Remote",
+      remoteType: "remote" as const,
+      url: j.url,
+      description: (j.jobDescription || "").replace(/<[^>]+>/g, " ").slice(0, 8000),
+      postedAt: j.pubDate ? new Date(j.pubDate) : null,
+    }))
+    .filter((j) => passesFilters(j, options));
 }
 
 export async function scoutAdzuna(options: ScoutOptions): Promise<ScoutedJob[]> {
@@ -300,17 +352,21 @@ export async function scoutAdzuna(options: ScoutOptions): Promise<ScoutedJob[]> 
     .filter((j) => passesFilters(j, options));
 }
 
-/** Public Greenhouse boards — major US tech / product companies */
+/** Public Greenhouse boards — major US tech / product / career sites */
 const GREENHOUSE_BOARDS = [
   "airbnb", "stripe", "discord", "figma", "notion", "openai", "anthropic", "datadog",
   "cloudflare", "vercel", "ramp", "brex", "plaid", "coinbase", "robinhood", "doordash",
   "instacart", "affirm", "chime", "scaleai", "databricks", "snowflake", "twilio",
   "dropbox", "asana", "airtable", "calendly", "gusto", "rippling", "gitlab", "hashicorp",
   "mongodb", "elastic", "okta", "duolingo", "reddit", "pinterest", "block", "nuro",
+  "hubspot", "square", "lyft", "uber", "coursera", "grammarly", "canva",
+  "linear", "retool", "sentry", "segment", "roblox", "nvidia",
+  "intel", "amd", "cisco", "salesforce", "adobe", "intuit", "paypal", "ebay",
 ];
 
 export async function scoutGreenhouse(options: ScoutOptions): Promise<ScoutedJob[]> {
   const results: ScoutedJob[] = [];
+  const age = Math.max(options.maxAgeDays, 3);
   await Promise.all(
     GREENHOUSE_BOARDS.map(async (board) => {
       try {
@@ -334,14 +390,14 @@ export async function scoutGreenhouse(options: ScoutOptions): Promise<ScoutedJob
             externalId: `greenhouse:${board}:${j.id}`,
             source: "Greenhouse",
             title: j.title,
-            company: board.charAt(0).toUpperCase() + board.slice(1),
+            company: displayName(board),
             location: j.location?.name,
             remoteType: /remote/i.test(j.location?.name || "") ? "remote" : "hybrid",
             url: j.absolute_url,
             description: (j.content || "").replace(/<[^>]+>/g, " ").slice(0, 8000),
             postedAt,
           };
-          if (passesFilters(job, { ...options, maxAgeDays: Math.max(options.maxAgeDays, 3) })) {
+          if (passesFilters(job, { ...options, maxAgeDays: age })) {
             results.push(job);
           }
         }
@@ -356,10 +412,13 @@ export async function scoutGreenhouse(options: ScoutOptions): Promise<ScoutedJob
 const LEVER_COMPANIES = [
   "netflix", "spotify", "twitch", "palantir", "eventbrite", "box", "shopify",
   "fing", "wealthfront", "mixpanel", "quillbot", "activecampaign",
+  "nubank", "grammarly", "duolingo", "notion", "figma", "canva",
+  "postman", "zapier", "attentive", "homerun", "lattice", "gousto",
 ];
 
 export async function scoutLever(options: ScoutOptions): Promise<ScoutedJob[]> {
   const results: ScoutedJob[] = [];
+  const age = Math.max(options.maxAgeDays, 5);
   await Promise.all(
     LEVER_COMPANIES.map(async (company) => {
       try {
@@ -382,14 +441,14 @@ export async function scoutLever(options: ScoutOptions): Promise<ScoutedJob[]> {
             externalId: `lever:${company}:${j.id}`,
             source: "Lever",
             title: j.text,
-            company: company.charAt(0).toUpperCase() + company.slice(1),
+            company: displayName(company),
             location: j.categories?.location,
             remoteType: /remote/i.test(j.categories?.location || "") ? "remote" : "hybrid",
             url: j.hostedUrl,
             description: (j.descriptionPlain || j.description || "").replace(/<[^>]+>/g, " ").slice(0, 8000),
             postedAt,
           };
-          if (passesFilters(job, { ...options, maxAgeDays: Math.max(options.maxAgeDays, 5) })) {
+          if (passesFilters(job, { ...options, maxAgeDays: age })) {
             results.push(job);
           }
         }
@@ -401,23 +460,145 @@ export async function scoutLever(options: ScoutOptions): Promise<ScoutedJob[]> {
   return results;
 }
 
-export async function scoutAllJobs(options: ScoutOptions): Promise<ScoutedJob[]> {
-  const batches = await Promise.allSettled([
-    scoutRemotive(options),
-    scoutArbeitnow(options),
-    scoutRemoteOK(options),
-    scoutJobicy(options),
-    scoutAdzuna(options),
-    scoutGreenhouse(options),
-    scoutLever(options),
-  ]);
+/** Public Ashby job boards (US startups / growth companies) */
+const ASHBY_BOARDS = [
+  "openai", "anthropic", "notion", "linear", "ramp", "mercury", "rippling",
+  "vercel", "retool", "cursor", "perplexity", "huggingface", "togetherai",
+  "benchling", "airtable", "superhuman", "loom", "notionlabs", "ashby",
+  "watershed", "navan", "flexport", "brex", "deel", "remotecom",
+];
 
+export async function scoutAshby(options: ScoutOptions): Promise<ScoutedJob[]> {
+  const results: ScoutedJob[] = [];
+  const age = Math.max(options.maxAgeDays, 5);
+  await Promise.all(
+    ASHBY_BOARDS.map(async (board) => {
+      try {
+        const res = await fetch(`https://api.ashbyhq.com/posting-api/job-board/${board}?includeCompensation=true`, {
+          signal: AbortSignal.timeout(15000),
+          headers: { "User-Agent": "JobHuntCopilot/1.0" },
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          jobs?: Array<{
+            id: string;
+            title: string;
+            location?: string;
+            secondaryLocations?: string[];
+            department?: string;
+            team?: string;
+            publishedAt?: string;
+            updatedAt?: string;
+            jobUrl?: string;
+            applyUrl?: string;
+            isListed?: boolean;
+            descriptionPlain?: string;
+            descriptionHtml?: string;
+          }>;
+        };
+        for (const j of data.jobs ?? []) {
+          if (j.isListed === false) continue;
+          const postedAt = j.publishedAt || j.updatedAt ? new Date(j.publishedAt || j.updatedAt!) : null;
+          const loc = [j.location, ...(j.secondaryLocations || [])].filter(Boolean).join(" / ");
+          const job: ScoutedJob = {
+            externalId: `ashby:${board}:${j.id}`,
+            source: "Ashby",
+            title: j.title,
+            company: displayName(board),
+            location: loc || undefined,
+            remoteType: /remote/i.test(loc) ? "remote" : "hybrid",
+            url: j.jobUrl || j.applyUrl || `https://jobs.ashbyhq.com/${board}/${j.id}`,
+            description: (j.descriptionPlain || j.descriptionHtml || "").replace(/<[^>]+>/g, " ").slice(0, 8000),
+            postedAt,
+          };
+          if (passesFilters(job, { ...options, maxAgeDays: age })) {
+            results.push(job);
+          }
+        }
+      } catch {
+        // board may be private / renamed
+      }
+    }),
+  );
+  return results;
+}
+
+/** USAJOBS — federal career portal (free API key required) */
+export async function scoutUsaJobs(options: ScoutOptions): Promise<ScoutedJob[]> {
+  const apiKey = options.usajobsApiKey || process.env.USAJOBS_API_KEY;
+  const userAgent =
+    options.usajobsUserAgent ||
+    process.env.USAJOBS_USER_AGENT ||
+    process.env.USAJOBS_EMAIL ||
+    "";
+  if (!apiKey || !userAgent) return [];
+
+  const keyword = encodeURIComponent(options.brief.slice(0, 80));
+  const location = encodeURIComponent((options.location || "United States").slice(0, 80));
+  const days = Math.min(Math.max(options.maxAgeDays, 1), 30);
+  const url =
+    `https://data.usajobs.gov/api/search?Keyword=${keyword}&LocationName=${location}` +
+    `&DatePosted=${days}&ResultsPerPage=50&SortField=DatePosted&SortDirection=Desc`;
+
+  const res = await fetch(url, {
+    signal: AbortSignal.timeout(25000),
+    headers: {
+      Host: "data.usajobs.gov",
+      "User-Agent": userAgent,
+      "Authorization-Key": apiKey,
+    },
+  });
+  if (!res.ok) return [];
+
+  const data = (await res.json()) as {
+    SearchResult?: {
+      SearchResultItems?: Array<{
+        MatchedObjectId?: string;
+        MatchedObjectDescriptor?: {
+          PositionID?: string;
+          PositionTitle?: string;
+          PositionURI?: string;
+          ApplyURI?: string[];
+          OrganizationName?: string;
+          DepartmentName?: string;
+          PositionLocationDisplay?: string;
+          UserArea?: { Details?: { JobSummary?: string } };
+          PublicationStartDate?: string;
+          PositionStartDate?: string;
+        };
+      }>;
+    };
+  };
+
+  return (data.SearchResult?.SearchResultItems ?? [])
+    .map((item) => {
+      const d = item.MatchedObjectDescriptor;
+      if (!d?.PositionTitle) return null;
+      const id = item.MatchedObjectId || d.PositionID || d.PositionTitle;
+      const posted = d.PublicationStartDate || d.PositionStartDate;
+      const job: ScoutedJob = {
+        externalId: `usajobs:${id}`,
+        source: "USAJOBS",
+        title: d.PositionTitle,
+        company: d.OrganizationName || d.DepartmentName || "US Federal",
+        location: d.PositionLocationDisplay || "United States",
+        remoteType: /remote|telework/i.test(d.PositionLocationDisplay || "") ? "remote" : "onsite",
+        url: d.ApplyURI?.[0] || d.PositionURI || `https://www.usajobs.gov/job/${id}`,
+        description: (d.UserArea?.Details?.JobSummary || "").slice(0, 8000),
+        postedAt: posted ? new Date(posted) : null,
+      };
+      return job;
+    })
+    .filter((j): j is ScoutedJob => j != null)
+    .filter((j) => passesFilters(j, options));
+}
+
+function mergeJobs(batches: ScoutedJob[][]): ScoutedJob[] {
   const merged: ScoutedJob[] = [];
   const seen = new Set<string>();
 
   for (const batch of batches) {
-    if (batch.status !== "fulfilled") continue;
-    for (const job of batch.value) {
+    for (const job of batch) {
       const key = `${job.company.toLowerCase()}::${job.title.toLowerCase()}`;
       if (seen.has(key) || seen.has(job.externalId)) continue;
       seen.add(key);
@@ -426,10 +607,55 @@ export async function scoutAllJobs(options: ScoutOptions): Promise<ScoutedJob[]>
     }
   }
 
-  // Newest first — prioritize newly opened roles
   return merged.sort((a, b) => {
     const at = a.postedAt?.getTime() ?? 0;
     const bt = b.postedAt?.getTime() ?? 0;
     return bt - at;
   });
+}
+
+export async function scoutAllJobs(options: ScoutOptions): Promise<ScoutResult> {
+  const hasAdzuna = Boolean(
+    (options.adzunaAppId || process.env.ADZUNA_APP_ID) &&
+      (options.adzunaAppKey || process.env.ADZUNA_APP_KEY),
+  );
+  const hasUsaJobs = Boolean(
+    (options.usajobsApiKey || process.env.USAJOBS_API_KEY) &&
+      (options.usajobsUserAgent || process.env.USAJOBS_USER_AGENT || process.env.USAJOBS_EMAIL),
+  );
+
+  const settled = await Promise.all([
+    settlePortal("Remotive", () => scoutRemotive(options)),
+    settlePortal("Arbeitnow", () => scoutArbeitnow(options)),
+    settlePortal("RemoteOK", () => scoutRemoteOK(options)),
+    settlePortal("Jobicy", () => scoutJobicy(options)),
+    settlePortal(
+      "Adzuna US",
+      () => scoutAdzuna(options),
+      hasAdzuna ? undefined : "missing ADZUNA_APP_ID/KEY",
+    ),
+    settlePortal(`Greenhouse (${GREENHOUSE_BOARDS.length} boards)`, () => scoutGreenhouse(options)),
+    settlePortal(`Lever (${LEVER_COMPANIES.length} boards)`, () => scoutLever(options)),
+    settlePortal(`Ashby (${ASHBY_BOARDS.length} boards)`, () => scoutAshby(options)),
+    settlePortal(
+      "USAJOBS",
+      () => scoutUsaJobs(options),
+      hasUsaJobs ? undefined : "missing USAJOBS_API_KEY + USAJOBS_USER_AGENT",
+    ),
+  ]);
+
+  return {
+    jobs: mergeJobs(settled.map((s) => s.jobs)),
+    portals: settled.map((s) => s.stat),
+  };
+}
+
+export function formatPortalLog(portals: PortalScoutStat[]) {
+  return portals
+    .map((p) => {
+      if (p.status === "skipped") return `${p.name}: skipped (${p.detail})`;
+      if (p.status === "error") return `${p.name}: error (${p.detail})`;
+      return `${p.name}: ${p.count}`;
+    })
+    .join(" · ");
 }

@@ -49,7 +49,7 @@ export function AutoApplyButton({
           disabled={busy || already}
           onClick={() => void apply(false)}
         >
-          {busy ? "Applying…" : already ? "Already applied" : "Auto-apply now"}
+          {busy ? "Autofilling…" : already ? "Already applied" : "Autofill & apply"}
         </button>
         {already ? (
           <button className="btn btn-secondary" disabled={busy} onClick={() => void apply(true)}>

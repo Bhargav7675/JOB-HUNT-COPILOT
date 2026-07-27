@@ -4,7 +4,7 @@ import { autoApplyToRole, isLikelyAutoApplySupported } from "./auto-apply";
 import { findContacts } from "./contacts";
 import { draftOutreach } from "./outreach";
 import { rankJobs } from "./rank";
-import { scoutAllJobs } from "./scout";
+import { formatPortalLog, scoutAllJobs } from "./scout";
 import { tailorResumeForRole } from "./tailor-resume";
 import type { PipelineProgress } from "./types";
 
@@ -101,7 +101,7 @@ export async function submitApplicationForRole(options: {
       data: {
         status: "unsupported",
         method: "unsupported",
-        error: "This board is not auto-apply supported yet. Open the posting and apply manually.",
+        error: "This board is not autofill-supported yet (Greenhouse, Lever, Ashby). Open the posting and apply manually.",
       },
     });
   }
@@ -191,17 +191,23 @@ export async function runJobHuntPipeline(options: {
   try {
     await appendLog(run.id, {
       stage: "scout",
-      message: `Scouting newly opened US roles (location: ${profile.locationPref || "United States"}, experience: ${profile.experienceYears} yrs)…`,
+      message: `Scouting newly opened US roles from career portals (location: ${profile.locationPref || "United States"}, experience: ${profile.experienceYears} yrs)…`,
       at: new Date().toISOString(),
     });
 
-    const scouted = await scoutAllJobs({
+    const { jobs: scouted, portals } = await scoutAllJobs({
       brief: profile.searchBrief,
       location: profile.locationPref || "United States",
       experienceYears: profile.experienceYears,
       maxAgeDays: profile.maxAgeDays,
       adzunaAppId: profile.adzunaAppId,
       adzunaAppKey: profile.adzunaAppKey,
+    });
+
+    await appendLog(run.id, {
+      stage: "scout",
+      message: `Portals queried — ${formatPortalLog(portals)}`,
+      at: new Date().toISOString(),
     });
 
     await prisma.agentRun.update({
@@ -294,7 +300,7 @@ export async function runJobHuntPipeline(options: {
         profileLlm(profile),
       );
 
-      // Auto-apply for high-fit roles when enabled
+      // Autofill / auto-apply for high-fit roles when enabled
       if (
         profile.autoApplyEnabled &&
         applyCount < profile.maxAutoAppliesPerRun &&
@@ -303,7 +309,7 @@ export async function runJobHuntPipeline(options: {
       ) {
         await appendLog(run.id, {
           stage: "apply",
-          message: `Auto-applying to ${job.title} @ ${job.company}`,
+          message: `Autofilling application for ${job.title} @ ${job.company}`,
           at: new Date().toISOString(),
         });
         try {
@@ -314,13 +320,13 @@ export async function runJobHuntPipeline(options: {
           if (application.status === "submitted") applyCount += 1;
           await appendLog(run.id, {
             stage: "apply",
-            message: `Auto-apply ${application.status} for ${job.company}`,
+            message: `Autofill ${application.status} for ${job.company}`,
             at: new Date().toISOString(),
           });
         } catch (error) {
           await appendLog(run.id, {
             stage: "apply",
-            message: `Auto-apply error: ${error instanceof Error ? error.message : "failed"}`,
+            message: `Autofill error: ${error instanceof Error ? error.message : "failed"}`,
             at: new Date().toISOString(),
           });
         }
@@ -392,7 +398,7 @@ export async function runJobHuntPipeline(options: {
 
     await appendLog(run.id, {
       stage: "done",
-      message: `Completed. Ranked ${top.length} roles, ${applyCount} auto-applied, ${contactCount} contacts, ${draftCount} drafts.`,
+      message: `Completed. Ranked ${top.length} roles, ${applyCount} autofilled/applied, ${contactCount} contacts, ${draftCount} drafts.`,
       at: new Date().toISOString(),
     });
 

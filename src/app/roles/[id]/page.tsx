@@ -61,9 +61,10 @@ export default async function RoleDetailPage({ params }: Props) {
       </div>
 
       <section className="surface mb-5 rounded-[1.35rem] p-4 sm:rounded-[1.6rem] sm:p-6">
-        <h2 className="display text-[1.45rem] sm:text-2xl">Auto-apply</h2>
+        <h2 className="display text-[1.45rem] sm:text-2xl">Autofill application</h2>
         <p className="mt-1 text-sm leading-relaxed muted">
-          Submits on supported ATS boards with your tailored resume, name, email, phone, and LinkedIn.
+          Fills and submits on supported ATS portals (Greenhouse, Lever, Ashby) with your tailored resume, name, email,
+          phone, and LinkedIn.
         </p>
         <div className="mt-4">
           <AutoApplyButton roleId={role.id} status={latestApp?.status} />
@@ -153,7 +154,7 @@ export default async function RoleDetailPage({ params }: Props) {
 
           <div className="surface rounded-[1.35rem] p-4 sm:rounded-[1.6rem] sm:p-6">
             <h2 className="display text-[1.45rem] sm:text-2xl">Outreach drafts</h2>
-            <p className="mt-1 text-sm leading-relaxed muted">Optional coffee-chat drafts — separate from auto-apply.</p>
+            <p className="mt-1 text-sm leading-relaxed muted">Optional coffee-chat drafts — separate from autofill.</p>
             <div className="mt-4 space-y-4 sm:space-y-5">
               {role.drafts.length === 0 ? (
                 <p className="text-sm muted">No drafts yet.</p>

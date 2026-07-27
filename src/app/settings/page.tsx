@@ -14,7 +14,7 @@ export default async function SettingsPage() {
   const profile = user.profile;
 
   return (
-    <AppShell title="Settings" subtitle="AI keys, schedule, auto-apply, and account details.">
+    <AppShell title="Settings" subtitle="AI keys, schedule, autofill applications, and account details.">
       <div className="mb-6 space-y-5">
         <InstallAppCard />
         <PushNotificationsCard />

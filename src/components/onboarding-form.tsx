@@ -33,6 +33,9 @@ export function OnboardingForm({
     typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC" : "UTC",
   );
   const [scheduleHourLocal, setScheduleHourLocal] = useState(8);
+  const [autoApplyEnabled, setAutoApplyEnabled] = useState(true);
+  const [phone, setPhone] = useState("");
+  const [linkedinUrl, setLinkedinUrl] = useState("");
 
   const canStep1 = fullName.trim().length > 1 && email.includes("@");
   const canStep2 =
@@ -75,6 +78,8 @@ export function OnboardingForm({
           searchBrief,
           locationPref,
           experienceYears,
+          phone: phone || undefined,
+          linkedinUrl: linkedinUrl || undefined,
           voiceNotes,
           resumeText,
           resumeFileName,
@@ -84,6 +89,7 @@ export function OnboardingForm({
           scheduleTimezone,
           scheduleHourLocal,
           overnightHourUtc: scheduleHourLocal,
+          autoApplyEnabled,
         }),
       });
       const data = await res.json();
@@ -206,13 +212,35 @@ export function OnboardingForm({
 
       {step === 3 && (
         <div className="space-y-4">
-          <h2 className="display text-[1.7rem] sm:text-3xl">Keys, schedule & voice</h2>
+          <h2 className="display text-[1.7rem] sm:text-3xl">Keys, schedule & autofill</h2>
           <p className="muted text-sm">
-            Add a Claude or OpenAI key for smarter ranking. Pick when the agent should refresh and apply.
+            Add a Claude or OpenAI key for smarter ranking. Choose when the agent should refresh and whether to autofill
+            applications on supported career portals.
           </p>
           <div>
             <label className="label">Voice notes for outreach</label>
             <textarea className="field min-h-24" value={voiceNotes} onChange={(e) => setVoiceNotes(e.target.value)} />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="label">Phone (optional, for autofill)</label>
+              <input
+                className="field"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+1…"
+                autoComplete="tel"
+              />
+            </div>
+            <div>
+              <label className="label">LinkedIn URL (optional)</label>
+              <input
+                className="field"
+                value={linkedinUrl}
+                onChange={(e) => setLinkedinUrl(e.target.value)}
+                placeholder="https://linkedin.com/in/…"
+              />
+            </div>
           </div>
           <div>
             <label className="label">AI provider</label>
@@ -265,8 +293,21 @@ export function OnboardingForm({
             <label className="label">Hunter.io API key (optional)</label>
             <input className="field" type="password" value={hunterApiKey} onChange={(e) => setHunterApiKey(e.target.value)} placeholder="hunter-…" />
           </div>
-          <div className="rounded-2xl border border-[var(--line)] bg-[var(--accent-soft)] p-3.5 text-sm sm:p-4">
-            Auto-apply can submit on supported boards during your scheduled run. Outreach drafts stay copy-only.
+          <div className="space-y-3 rounded-2xl border border-[var(--accent)] bg-[var(--accent-soft)] p-3.5 sm:p-4">
+            <label className="flex items-start gap-2 text-sm font-semibold">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={autoApplyEnabled}
+                onChange={(e) => setAutoApplyEnabled(e.target.checked)}
+              />
+              <span>Autofill applications on supported portals</span>
+            </label>
+            <p className="text-sm leading-relaxed muted">
+              Fills Greenhouse, Lever, and Ashby apply forms with your profile and tailored resume when fit/ATS scores
+              meet your Settings thresholds. Does not work on every board (CAPTCHA/login). Outreach drafts stay
+              copy-only — we never send emails for you.
+            </p>
           </div>
           <div className="stack-actions pt-1">
             <button className="btn btn-primary" disabled={busy} onClick={() => void submit()}>
