@@ -4,6 +4,7 @@ export type ScoutOptions = {
   brief: string;
   location?: string | null;
   experienceYears?: number | null;
+  visaSponsorship?: boolean | null;
   maxAgeDays: number;
   adzunaAppId?: string | null;
   adzunaAppKey?: string | null;
@@ -18,9 +19,18 @@ export type PortalScoutStat = {
   detail?: string;
 };
 
+export type VisaFilterResult = {
+  needed: boolean;
+  mode: "off" | "hard" | "soft";
+  matched: number;
+  total: number;
+  message?: string;
+};
+
 export type ScoutResult = {
   jobs: ScoutedJob[];
   portals: PortalScoutStat[];
+  visaFilter: VisaFilterResult;
 };
 
 function withinDays(date: Date | null | undefined, maxAgeDays: number) {
@@ -131,6 +141,68 @@ function passesFilters(job: ScoutedJob, options: ScoutOptions) {
     matchesLocation(job, options.location) &&
     matchesExperience(job, options.experienceYears)
   );
+}
+
+const VISA_SPONSORSHIP_PATTERNS = [
+  /visa\s+sponsorship/i,
+  /sponsorship\s+available/i,
+  /will\s+sponsor/i,
+  /sponsors?\s+(?:h-?1b|visas?|work\s+visa|green\s+card)/i,
+  /(?:h-?1b|h1b)\s+(?:visa\s+)?(?:sponsor|sponsorship|transfer)/i,
+  /work\s+visa/i,
+  /sponsor\s+visa/i,
+  /green\s+card\s+sponsorship/i,
+  /\bopt\b/i,
+  /stem\s+opt/i,
+  /work\s+authorization\s+sponsorship/i,
+  /immigration\s+sponsorship/i,
+  /open\s+to\s+sponsorship/i,
+  /provides?\s+sponsorship/i,
+];
+
+export function mentionsVisaSponsorship(job: Pick<ScoutedJob, "title" | "company" | "description" | "location">) {
+  const hay = `${job.title} ${job.company} ${job.location ?? ""} ${job.description}`.slice(0, 12000);
+  return VISA_SPONSORSHIP_PATTERNS.some((re) => re.test(hay));
+}
+
+/** Hard-filter for sponsorship signals; soften to prefer (not empty) when too few matches. */
+export function applyVisaSponsorshipFilter(
+  jobs: ScoutedJob[],
+  needed?: boolean | null,
+): { jobs: ScoutedJob[]; visaFilter: VisaFilterResult } {
+  if (!needed) {
+    return { jobs, visaFilter: { needed: false, mode: "off", matched: 0, total: jobs.length } };
+  }
+
+  const matched = jobs.filter(mentionsVisaSponsorship);
+  const total = jobs.length;
+  const minKeep = Math.min(5, Math.max(3, Math.ceil(total * 0.15)));
+
+  if (matched.length >= minKeep || (total > 0 && matched.length === total)) {
+    return {
+      jobs: matched,
+      visaFilter: {
+        needed: true,
+        mode: "hard",
+        matched: matched.length,
+        total,
+        message: `Visa sponsorship filter: kept ${matched.length} of ${total} roles mentioning sponsorship`,
+      },
+    };
+  }
+
+  // Soften: sponsorship mentions first, then the rest — avoid hard-empty
+  const rest = jobs.filter((j) => !mentionsVisaSponsorship(j));
+  return {
+    jobs: [...matched, ...rest],
+    visaFilter: {
+      needed: true,
+      mode: "soft",
+      matched: matched.length,
+      total,
+      message: `Visa sponsorship filter softened: only ${matched.length} of ${total} mentioned sponsorship — preferring those, keeping others`,
+    },
+  };
 }
 
 function displayName(token: string) {
@@ -644,9 +716,13 @@ export async function scoutAllJobs(options: ScoutOptions): Promise<ScoutResult> 
     ),
   ]);
 
+  const merged = mergeJobs(settled.map((s) => s.jobs));
+  const { jobs, visaFilter } = applyVisaSponsorshipFilter(merged, options.visaSponsorship);
+
   return {
-    jobs: mergeJobs(settled.map((s) => s.jobs)),
+    jobs,
     portals: settled.map((s) => s.stat),
+    visaFilter,
   };
 }
 

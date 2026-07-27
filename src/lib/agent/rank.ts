@@ -1,4 +1,5 @@
 import { hasLlmKey, llmJson, type LlmConfig } from "@/lib/llm";
+import { mentionsVisaSponsorship } from "./scout";
 import type { RankedJob, ScoutedJob } from "./types";
 
 const STOP = new Set([
@@ -15,7 +16,12 @@ function tokens(text: string) {
     .filter((t) => t.length > 2 && !STOP.has(t));
 }
 
-function heuristicRank(resumeText: string, brief: string, job: ScoutedJob): RankedJob {
+function heuristicRank(
+  resumeText: string,
+  brief: string,
+  job: ScoutedJob,
+  visaSponsorship?: boolean | null,
+): RankedJob {
   const resumeTokens = new Set(tokens(resumeText));
   const briefTokens = tokens(brief);
   const jobTokens = tokens(`${job.title} ${job.description}`);
@@ -34,6 +40,7 @@ function heuristicRank(resumeText: string, brief: string, job: ScoutedJob): Rank
   const titleTokens = tokens(job.title);
   const titleOverlap = titleTokens.filter((t) => resumeTokens.has(t) || briefTokens.includes(t)).length;
   const titleBriefHits = briefTokens.filter((t) => job.title.toLowerCase().includes(t)).length;
+  const visaBoost = visaSponsorship && mentionsVisaSponsorship(job) ? 14 : 0;
 
   const matchScore = Math.round(
     Math.min(
@@ -45,7 +52,8 @@ function heuristicRank(resumeText: string, brief: string, job: ScoutedJob): Rank
           titleBoost +
           titleBriefHits * 8 +
           titleOverlap * 3 +
-          matches.length * 0.5,
+          matches.length * 0.5 +
+          visaBoost,
       ),
     ),
   );
@@ -54,8 +62,8 @@ function heuristicRank(resumeText: string, brief: string, job: ScoutedJob): Rank
     ...job,
     matchScore,
     rankReason: matches.length
-      ? `Strong overlap on ${matches.slice(0, 4).join(", ")}${gaps.length ? `; gaps: ${gaps.slice(0, 3).join(", ")}` : ""}`
-      : `Partial brief alignment; review description carefully before pursuing.`,
+      ? `Strong overlap on ${matches.slice(0, 4).join(", ")}${gaps.length ? `; gaps: ${gaps.slice(0, 3).join(", ")}` : ""}${visaBoost ? "; mentions visa sponsorship" : ""}`
+      : `Partial brief alignment; review description carefully before pursuing.${visaBoost ? " Mentions visa sponsorship." : ""}`,
     skillMatches: matches,
     skillGaps: gaps,
   };
@@ -65,13 +73,14 @@ export async function rankJobs(options: {
   resumeText: string;
   brief: string;
   jobs: ScoutedJob[];
+  visaSponsorship?: boolean | null;
   llm?: LlmConfig;
   /** @deprecated use llm */
   openaiApiKey?: string | null;
 }): Promise<RankedJob[]> {
-  const { resumeText, brief, jobs } = options;
+  const { resumeText, brief, jobs, visaSponsorship } = options;
   const llm: LlmConfig = options.llm || { apiKey: options.openaiApiKey };
-  const heuristic = jobs.map((j) => heuristicRank(resumeText, brief, j));
+  const heuristic = jobs.map((j) => heuristicRank(resumeText, brief, j, visaSponsorship));
 
   if (!hasLlmKey(llm) || jobs.length === 0) {
     return heuristic.sort((a, b) => b.matchScore - a.matchScore);
@@ -84,7 +93,12 @@ export async function rankJobs(options: {
       company: j.company,
       location: j.location,
       description: j.description.slice(0, 1800),
+      mentionsVisaSponsorship: mentionsVisaSponsorship(j),
     }));
+
+    const systemPrompt = visaSponsorship
+      ? 'You are an expert technical recruiter. Score job fit honestly 0-100. Never invent resume experience. The candidate needs employers who offer visa sponsorship — rank roles that mention H-1B, visa sponsorship, OPT, or will sponsor meaningfully higher when otherwise comparable. Return JSON: {"rankings":[{"i":0,"matchScore":72,"rankReason":"...","skillMatches":["..."],"skillGaps":["..."]}]}'
+      : 'You are an expert technical recruiter. Score job fit honestly 0-100. Never invent resume experience. Return JSON: {"rankings":[{"i":0,"matchScore":72,"rankReason":"...","skillMatches":["..."],"skillGaps":["..."]}]}';
 
     const parsed = await llmJson<{
       rankings?: Array<{
@@ -99,8 +113,7 @@ export async function rankJobs(options: {
       [
         {
           role: "system",
-          content:
-            'You are an expert technical recruiter. Score job fit honestly 0-100. Never invent resume experience. Return JSON: {"rankings":[{"i":0,"matchScore":72,"rankReason":"...","skillMatches":["..."],"skillGaps":["..."]}]}',
+          content: systemPrompt,
         },
         {
           role: "user",
@@ -108,6 +121,7 @@ export async function rankJobs(options: {
             searchBrief: brief,
             resume: resumeText.slice(0, 9000),
             jobs: payload,
+            visaSponsorshipNeeded: Boolean(visaSponsorship),
           }),
         },
       ],
@@ -119,9 +133,13 @@ export async function rankJobs(options: {
       const ai = byIndex.get(i);
       const fallback = heuristic[i];
       if (!ai) return fallback;
+      let score = Math.max(0, Math.min(100, Math.round(ai.matchScore)));
+      if (visaSponsorship && mentionsVisaSponsorship(job)) {
+        score = Math.min(100, score + 6);
+      }
       return {
         ...job,
-        matchScore: Math.max(0, Math.min(100, Math.round(ai.matchScore))),
+        matchScore: score,
         rankReason: ai.rankReason || fallback.rankReason,
         skillMatches: ai.skillMatches?.length ? ai.skillMatches : fallback.skillMatches,
         skillGaps: ai.skillGaps?.length ? ai.skillGaps : fallback.skillGaps,

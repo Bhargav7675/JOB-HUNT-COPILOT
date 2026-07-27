@@ -34,6 +34,7 @@ type ProfileFormProps = {
     searchBrief: string;
     locationPref: string | null;
     experienceYears: number;
+    visaSponsorship: boolean;
     voiceNotes: string | null;
     resumeText: string;
     openaiApiKey: string;
@@ -159,6 +160,21 @@ export function SettingsForm({ initial }: ProfileFormProps) {
           />
           <p className="mt-1 text-xs muted">Matches junior / mid / senior / staff openings.</p>
         </div>
+      </div>
+      <div className="space-y-2 rounded-2xl border border-[var(--line)] bg-white/50 p-4">
+        <label className="flex items-start gap-2 text-sm font-semibold">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={form.visaSponsorship}
+            onChange={(e) => set("visaSponsorship", e.target.checked)}
+          />
+          <span>Visa sponsorship</span>
+        </label>
+        <p className="text-sm leading-relaxed muted">
+          When on, scout and rank prioritize roles that mention H-1B, visa sponsorship, OPT, or “will sponsor.” If too
+          few postings say so explicitly, we soften the filter so your run isn’t empty.
+        </p>
       </div>
       <div>
         <label className="label">Resume text</label>

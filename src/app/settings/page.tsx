@@ -29,6 +29,7 @@ export default async function SettingsPage() {
           searchBrief: profile.searchBrief,
           locationPref: profile.locationPref,
           experienceYears: profile.experienceYears,
+          visaSponsorship: profile.visaSponsorship,
           voiceNotes: profile.voiceNotes,
           resumeText: profile.resumeText,
           openaiApiKey: profile.openaiApiKey ? `${profile.openaiApiKey.slice(0, 3)}••••${profile.openaiApiKey.slice(-4)}` : "",

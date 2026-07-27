@@ -191,14 +191,15 @@ export async function runJobHuntPipeline(options: {
   try {
     await appendLog(run.id, {
       stage: "scout",
-      message: `Scouting newly opened US roles from career portals (location: ${profile.locationPref || "United States"}, experience: ${profile.experienceYears} yrs)…`,
+      message: `Scouting newly opened US roles from career portals (location: ${profile.locationPref || "United States"}, experience: ${profile.experienceYears} yrs${profile.visaSponsorship ? ", visa sponsorship needed" : ""})…`,
       at: new Date().toISOString(),
     });
 
-    const { jobs: scouted, portals } = await scoutAllJobs({
+    const { jobs: scouted, portals, visaFilter } = await scoutAllJobs({
       brief: profile.searchBrief,
       location: profile.locationPref || "United States",
       experienceYears: profile.experienceYears,
+      visaSponsorship: profile.visaSponsorship,
       maxAgeDays: profile.maxAgeDays,
       adzunaAppId: profile.adzunaAppId,
       adzunaAppKey: profile.adzunaAppKey,
@@ -209,6 +210,14 @@ export async function runJobHuntPipeline(options: {
       message: `Portals queried — ${formatPortalLog(portals)}`,
       at: new Date().toISOString(),
     });
+
+    if (visaFilter.needed && visaFilter.message) {
+      await appendLog(run.id, {
+        stage: "scout",
+        message: visaFilter.message,
+        at: new Date().toISOString(),
+      });
+    }
 
     await prisma.agentRun.update({
       where: { id: run.id },
@@ -233,8 +242,14 @@ export async function runJobHuntPipeline(options: {
         profile.searchBrief,
         `Target location: ${profile.locationPref || "United States"}`,
         `Years of experience: ${profile.experienceYears}`,
-      ].join(". "),
+        profile.visaSponsorship
+          ? "Candidate needs visa sponsorship (H-1B / work authorization). Prefer roles that mention sponsorship, H-1B, OPT, or will sponsor."
+          : null,
+      ]
+        .filter(Boolean)
+        .join(". "),
       jobs: scouted,
+      visaSponsorship: profile.visaSponsorship,
       llm: profileLlm(profile),
     });
 

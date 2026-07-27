@@ -58,6 +58,7 @@ model Profile {
   searchBrief      String
   locationPref     String?
   experienceYears  Int      @default(3)
+  visaSponsorship  Boolean  @default(false)
   voiceNotes       String?
   resumeText       String
   resumeFileName   String?

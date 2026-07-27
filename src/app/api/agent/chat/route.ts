@@ -93,6 +93,7 @@ export async function POST(req: Request) {
     settings: {
       autoApplyEnabled: profile.autoApplyEnabled,
       autoApplyMinScore: profile.autoApplyMinScore,
+      visaSponsorship: profile.visaSponsorship,
       scheduleTimezone: profile.scheduleTimezone,
       scheduleHourLocal: profile.scheduleHourLocal,
       overnightEnabled: profile.overnightEnabled,

@@ -23,6 +23,7 @@ export function OnboardingForm({
   const [searchBrief, setSearchBrief] = useState("");
   const [locationPref, setLocationPref] = useState("United States");
   const [experienceYears, setExperienceYears] = useState(3);
+  const [visaSponsorship, setVisaSponsorship] = useState(false);
   const [voiceNotes, setVoiceNotes] = useState("Direct, warm, concise — no buzzword soup.");
   const [resumeText, setResumeText] = useState("");
   const [resumeFileName, setResumeFileName] = useState<string | undefined>();
@@ -78,6 +79,7 @@ export function OnboardingForm({
           searchBrief,
           locationPref,
           experienceYears,
+          visaSponsorship,
           phone: phone || undefined,
           linkedinUrl: linkedinUrl || undefined,
           voiceNotes,
@@ -175,6 +177,21 @@ export function OnboardingForm({
               required
             />
             <p className="mt-1 text-xs muted">Helps match junior / mid / senior / staff-level openings.</p>
+          </div>
+          <div className="space-y-2 rounded-2xl border border-[var(--line)] bg-white/40 p-3.5 sm:p-4">
+            <label className="flex items-start gap-2 text-sm font-semibold">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={visaSponsorship}
+                onChange={(e) => setVisaSponsorship(e.target.checked)}
+              />
+              <span>Visa sponsorship</span>
+            </label>
+            <p className="text-sm leading-relaxed muted">
+              Turn on if you need employers who offer visa sponsorship. We’ll prioritize (and when possible filter for)
+              roles that mention H-1B, sponsorship, OPT, or similar.
+            </p>
           </div>
           <div>
             <label className="label">Resume PDF or TXT</label>
