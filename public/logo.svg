@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none" role="img" aria-label="Job Hunt Copilot">
+  <defs>
+    <linearGradient id="bg" x1="24" y1="8" x2="104" y2="120" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#14958C"/>
+      <stop offset="0.55" stop-color="#0B5F58"/>
+      <stop offset="1" stop-color="#063F3A"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="64" y1="8" x2="64" y2="70" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="30" fill="url(#bg)"/>
+  <rect width="128" height="128" rx="30" fill="url(#sheen)"/>
+  <!-- Geometric C -->
+  <path
+    fill="#FFFFFF"
+    d="M80.63 32.48
+       A40 40 0 1 0 80.63 95.52
+       L70.16 82.12
+       A23 23 0 1 1 70.16 45.88
+       Z"
+  />
+  <!-- Forward chevron -->
+  <path
+    fill="#FFFFFF"
+    d="M78 42
+       L98 64
+       L78 86
+       L68.5 86
+       L88.5 64
+       L68.5 42
+       Z"
+  />
+</svg>

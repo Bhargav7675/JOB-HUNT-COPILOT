@@ -1,0 +1,204 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  profile      Profile?
+  pushSubscriptions PushSubscription[]
+  passwordResets PasswordResetToken[]
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model Profile {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName         String
+  email            String
+  phone            String?
+  linkedinUrl      String?
+  headline         String?
+  searchBrief      String
+  locationPref     String?
+  experienceYears  Int      @default(3)
+  voiceNotes       String?
+  resumeText       String
+  resumeFileName   String?
+  resumeMimeType   String?
+  openaiApiKey     String?
+  llmProvider      String   @default("auto") // auto | openai | anthropic
+  llmModel         String?
+  llmBaseUrl       String?
+  hunterApiKey     String?
+  adzunaAppId      String?
+  adzunaAppKey     String?
+  maxRolesPerRun   Int      @default(25)
+  maxAgeDays       Int      @default(2)
+  overnightEnabled Boolean  @default(true)
+  overnightHourUtc Int      @default(8)
+  scheduleTimezone String   @default("UTC")
+  scheduleHourLocal Int     @default(8)
+  autoApplyEnabled Boolean  @default(true)
+  autoApplyMinScore Int     @default(70)
+  autoApplyMinAtsScore Int  @default(45)
+  maxAutoAppliesPerRun Int  @default(5)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  roles         Role[]
+  runs          AgentRun[]
+  contacts      Contact[]
+  applications  Application[]
+}
+
+model AgentRun {
+  id            String    @id @default(cuid())
+  profileId     String
+  profile       Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  status        String    @default("queued")
+  trigger       String    @default("manual")
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  error         String?
+  scoutingCount Int       @default(0)
+  rankedCount   Int       @default(0)
+  contactCount  Int       @default(0)
+  draftCount    Int       @default(0)
+  logs          String    @default("[]")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  roles Role[]
+}
+
+model Role {
+  id                String    @id @default(cuid())
+  profileId         String
+  profile           Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  runId             String?
+  run               AgentRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
+  externalId        String
+  source            String
+  title             String
+  company           String
+  location          String?
+  remoteType        String?
+  url               String
+  description       String
+  postedAt          DateTime?
+  matchScore        Int       @default(0)
+  rankReason        String?
+  skillMatches      String    @default("[]")
+  skillGaps         String    @default("[]")
+  resumeSuggestions String?
+  tailoredResumeText String?
+  atsScoreBefore    Int?
+  atsScoreAfter     Int?
+  atsKeywordsMatched String  @default("[]")
+  atsKeywordsMissing String  @default("[]")
+  resumeChangeSummary String?
+  status            String    @default("new")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  contacts Contact[]
+  drafts   OutreachDraft[]
+  applications Application[]
+
+  @@unique([profileId, externalId])
+  @@index([profileId, matchScore])
+  @@index([status])
+}
+
+model Application {
+  id                String    @id @default(cuid())
+  profileId         String
+  profile           Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  roleId            String
+  role              Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  status            String    @default("queued") // queued | applying | submitted | failed | unsupported | skipped
+  method            String?
+  error             String?
+  confirmationText  String?
+  applyUrl          String?
+  submittedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([profileId, status])
+  @@index([roleId])
+  @@unique([profileId, roleId])
+}
+
+model Contact {
+  id          String   @id @default(cuid())
+  profileId   String
+  profile     Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  roleId      String
+  role        Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  fullName    String
+  title       String?
+  email       String?
+  emailStatus String   @default("unknown")
+  confidence  Float    @default(0)
+  linkedinUrl String?
+  source      String   @default("inferred")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  drafts OutreachDraft[]
+
+  @@index([roleId])
+}
+
+model OutreachDraft {
+  id        String   @id @default(cuid())
+  roleId    String
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  contactId String?
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  subject   String
+  body      String
+  status    String   @default("draft")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([roleId, status])
+}
