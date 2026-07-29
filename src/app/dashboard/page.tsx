@@ -77,7 +77,9 @@ export default async function DashboardPage() {
             <p className="eyebrow">Control</p>
             <h2 className="display mt-1 text-[1.55rem] sm:text-[1.85rem]">Run your agent</h2>
             <p className="mt-1.5 text-sm leading-relaxed muted">
-              Scout career portals, rank, tailor, and autofill applications for roles that meet your Settings thresholds.
+              Stages: scout open roles from connected boards → analyze/rank against your real resume → tailored
+              LaTeX/PDF → contacts &amp; outreach → optional autofill. Coverage is connected boards only — not every job
+              on the internet.
             </p>
           </div>
           <RunAgentButton />

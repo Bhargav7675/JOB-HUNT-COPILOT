@@ -84,8 +84,10 @@ export default async function RoleDetailPage({ params }: Props) {
           suggestions={role.resumeSuggestions}
           atsBefore={role.atsScoreBefore}
           atsAfter={role.atsScoreAfter}
+          atsExplanation={role.atsExplanation}
           matched={atsMatched}
           missing={atsMissing}
+          guardLog={safeJsonParse(role.resumeGuardLog, [] as string[])}
         />
       </div>
 

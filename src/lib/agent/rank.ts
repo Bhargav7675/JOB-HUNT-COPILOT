@@ -97,8 +97,8 @@ export async function rankJobs(options: {
     }));
 
     const systemPrompt = visaSponsorship
-      ? 'You are an expert technical recruiter. Score job fit honestly 0-100. Never invent resume experience. The candidate needs employers who offer visa sponsorship — rank roles that mention H-1B, visa sponsorship, OPT, or will sponsor meaningfully higher when otherwise comparable. Return JSON: {"rankings":[{"i":0,"matchScore":72,"rankReason":"...","skillMatches":["..."],"skillGaps":["..."]}]}'
-      : 'You are an expert technical recruiter. Score job fit honestly 0-100. Never invent resume experience. Return JSON: {"rankings":[{"i":0,"matchScore":72,"rankReason":"...","skillMatches":["..."],"skillGaps":["..."]}]}';
+      ? 'You are an expert technical recruiter. Score job fit honestly 0-100. ONLY use facts present in the resume — never invent skills, jobs, degrees, employers, or metrics. skillMatches must be tokens/phrases that appear in the resume; skillGaps are JD asks the resume lacks (do not claim the candidate has them). The candidate needs employers who offer visa sponsorship — rank roles that mention H-1B, visa sponsorship, OPT, or will sponsor meaningfully higher when otherwise comparable. Return JSON: {"rankings":[{"i":0,"matchScore":72,"rankReason":"...","skillMatches":["..."],"skillGaps":["..."]}]}'
+      : 'You are an expert technical recruiter. Score job fit honestly 0-100. ONLY use facts present in the resume — never invent skills, jobs, degrees, employers, or metrics. skillMatches must be tokens/phrases that appear in the resume; skillGaps are JD asks the resume lacks (do not claim the candidate has them). Return JSON: {"rankings":[{"i":0,"matchScore":72,"rankReason":"...","skillMatches":["..."],"skillGaps":["..."]}]}';
 
     const parsed = await llmJson<{
       rankings?: Array<{
@@ -129,6 +129,17 @@ export async function rankJobs(options: {
     );
 
     const byIndex = new Map((parsed.rankings ?? []).map((r) => [r.i, r]));
+    const resumeTokSet = new Set(tokens(resumeText));
+    const resumeLower = resumeText.toLowerCase();
+    const grounded = (list: string[] | undefined, fallback: string[]) => {
+      const src = list?.length ? list : fallback;
+      return src.filter((s) => {
+        const t = s.toLowerCase().trim();
+        if (!t) return false;
+        if (resumeLower.includes(t)) return true;
+        return tokens(t).every((tok) => resumeTokSet.has(tok) || resumeLower.includes(tok));
+      });
+    };
     const ranked = jobs.map((job, i) => {
       const ai = byIndex.get(i);
       const fallback = heuristic[i];
@@ -137,11 +148,12 @@ export async function rankJobs(options: {
       if (visaSponsorship && mentionsVisaSponsorship(job)) {
         score = Math.min(100, score + 6);
       }
+      const skillMatches = grounded(ai.skillMatches, fallback.skillMatches);
       return {
         ...job,
         matchScore: score,
         rankReason: ai.rankReason || fallback.rankReason,
-        skillMatches: ai.skillMatches?.length ? ai.skillMatches : fallback.skillMatches,
+        skillMatches: skillMatches.length ? skillMatches : fallback.skillMatches,
         skillGaps: ai.skillGaps?.length ? ai.skillGaps : fallback.skillGaps,
       };
     });

@@ -1,13 +1,21 @@
 import { hasLlmKey, llmJson, type LlmConfig } from "@/lib/llm";
-import { buildAtsReport, scoreAtsMatch, type AtsKeywordReport } from "./ats";
+import { buildAtsReport, scoreAtsMatch, type AtsKeywordReport } from "@/lib/ats";
+import {
+  ANTI_HALLUCINATION_SYSTEM_RULES,
+  guardAgainstHallucination,
+} from "./hallucination-guard";
+import { tailoredResumeToLatex } from "@/lib/resume-formats";
 import type { RankedJob } from "./types";
 
 export type TailoredResumeResult = {
   tailoredResumeText: string;
+  tailoredLatex: string;
   resumeSuggestions: string;
   changeSummary: string;
   atsBefore: AtsKeywordReport;
   atsAfter: AtsKeywordReport;
+  atsExplanation: string;
+  guardLog: string[];
 };
 
 function blockScore(block: string, keywords: string[]) {
@@ -20,7 +28,12 @@ function blockScore(block: string, keywords: string[]) {
  * so ATS-relevant content surfaces first, and lightly mirrors JD keywords already
  * present in the candidate's vocabulary.
  */
-function heuristicTailor(resumeText: string, job: RankedJob, atsBefore: AtsKeywordReport): TailoredResumeResult {
+function heuristicTailor(
+  resumeText: string,
+  job: RankedJob,
+  atsBefore: AtsKeywordReport,
+  fullName: string,
+): TailoredResumeResult {
   const lines = resumeText.replace(/\r\n/g, "\n").split("\n");
   const header = lines.slice(0, Math.min(8, lines.length));
   const bodyLines = lines.slice(header.length);
@@ -33,10 +46,8 @@ function heuristicTailor(resumeText: string, job: RankedJob, atsBefore: AtsKeywo
     (a, b) => blockScore(b, atsBefore.keywords) - blockScore(a, atsBefore.keywords),
   );
 
-  // Keep original non-bullet structure order but put high-scoring bullets near top of experience
   const tailoredLines = [...header];
 
-  // Role-targeted professional summary (only using existing matched keywords)
   const matchPhrase = atsBefore.matched.slice(0, 6).join(", ");
   if (matchPhrase) {
     tailoredLines.push("");
@@ -46,9 +57,9 @@ function heuristicTailor(resumeText: string, job: RankedJob, atsBefore: AtsKeywo
     );
   }
 
-  // Preserve remaining content with reordered bullets first
   if (rankedBullets.length) {
     tailoredLines.push("");
+    tailoredLines.push("EXPERIENCE");
     tailoredLines.push(...rankedBullets);
   }
   if (nonBullets.length) {
@@ -56,50 +67,68 @@ function heuristicTailor(resumeText: string, job: RankedJob, atsBefore: AtsKeywo
     tailoredLines.push(...nonBullets);
   }
 
-  // Soft keyword bank: only keywords already matched (never invent skills)
   if (atsBefore.matched.length) {
     tailoredLines.push("");
-    tailoredLines.push("ATS KEYWORDS (from existing experience)");
+    tailoredLines.push("SKILLS");
     tailoredLines.push(atsBefore.matched.slice(0, 18).join(" · "));
   }
 
-  const tailoredResumeText = tailoredLines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  const rawText = tailoredLines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  const guarded = guardAgainstHallucination(resumeText, rawText);
+  const tailoredResumeText = guarded.text;
   const atsAfter = scoreAtsMatch(tailoredResumeText, atsBefore.keywords);
 
   const stillMissing = atsAfter.missing.slice(0, 8);
   const changeSummary = [
     `Reordered content to surface role-relevant bullets for ${job.title}.`,
-    `ATS match ${atsBefore.score}% → ${atsAfter.score}%.`,
+    `ATS keyword match ${atsBefore.score}% → ${atsAfter.score}%` +
+      (atsAfter.compositeScore != null ? ` (composite ~${atsAfter.compositeScore}%).` : "."),
     stillMissing.length
       ? `Keywords still absent from your background (not invented): ${stillMissing.join(", ")}.`
       : `Strong keyword coverage for this posting.`,
-  ].join(" ");
+    guarded.log.length ? `Guard stripped ${guarded.log.length} hallucinated fragment(s).` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   const resumeSuggestions = [
     `Lead with bullets that already mention: ${atsBefore.matched.slice(0, 5).join(", ") || "role-relevant wins"}.`,
     stillMissing.length
       ? `Do not fabricate: ${stillMissing.slice(0, 5).join(", ")}. Only add if truly in your experience, using your normal wording.`
       : `Mirror exact phrases from the posting where they already match your work.`,
-    `Keep your original voice and section format — ATS parsers prefer clean plain text.`,
+    `Keep single-column plain text / LaTeX / text PDF — ATS parsers prefer clean parseable layout (no tables/graphics).`,
+    ...(atsAfter.structure?.tips.slice(0, 2) || []),
   ].join("\n");
+
+  const tailoredLatex = tailoredResumeToLatex({
+    fullName,
+    company: job.company,
+    title: job.title,
+    resumeText: tailoredResumeText,
+  });
 
   return {
     tailoredResumeText,
+    tailoredLatex,
     resumeSuggestions,
     changeSummary,
     atsBefore,
     atsAfter,
+    atsExplanation: atsAfter.explanation || changeSummary,
+    guardLog: guarded.log,
   };
 }
 
 export async function tailorResumeForRole(options: {
   resumeText: string;
   job: RankedJob;
+  fullName?: string;
   llm?: LlmConfig;
   openaiApiKey?: string | null;
 }): Promise<TailoredResumeResult> {
+  const fullName = options.fullName || "Candidate";
   const atsBefore = buildAtsReport(options.resumeText, options.job);
-  const fallback = heuristicTailor(options.resumeText, options.job, atsBefore);
+  const fallback = heuristicTailor(options.resumeText, options.job, atsBefore, fullName);
   const llm: LlmConfig = options.llm || { apiKey: options.openaiApiKey };
 
   if (!hasLlmKey(llm)) return fallback;
@@ -117,25 +146,26 @@ export async function tailorResumeForRole(options: {
           role: "system",
           content: `You are an elite resume writer specializing in ATS optimization.
 
-HARD RULES:
-1. NEVER invent jobs, degrees, tools, metrics, or skills not clearly supported by the original resume.
-2. Preserve the candidate's wording style, tense, and section format as closely as possible.
-3. Produce a complete plain-text resume tailored to ONE job posting.
-4. Optimize for ATS: weave in missing keywords ONLY when they are honest synonyms/reflections of existing experience.
-5. Reorder bullets so the most role-relevant proof points come first under each role.
-6. Keep contact/header lines intact.
-7. Return JSON only.`,
+${ANTI_HALLUCINATION_SYSTEM_RULES}
+
+ADDITIONAL RULES:
+1. Preserve the candidate's wording style, tense, and section format as closely as possible.
+2. Produce a complete plain-text resume tailored to ONE job posting.
+3. Optimize for ATS: single-column plain text, standard headings (Experience, Education, Skills, Summary), weave in keywords ONLY when honest reflections of existing experience.
+4. Reorder bullets so the most role-relevant proof points come first under each role.
+5. Keep contact/header lines intact.
+6. Never invent employers, degrees, metrics, or tools.`,
         },
         {
           role: "user",
           content: JSON.stringify({
             instructions: {
-              goal: "Tailor resume for ATS + human hiring manager while keeping original voice/format",
+              goal: "Tailor resume for ATS + human hiring manager while keeping original voice/format. NEVER invent facts.",
               returnShape: {
                 tailoredResumeText: "full plain-text resume",
                 changeSummary: "2-4 sentences of what changed and why",
                 resumeSuggestions: "3-5 short bullets of remaining honest improvements",
-                keywordsUsed: ["keyword phrases intentionally surfaced"],
+                keywordsUsed: ["keyword phrases intentionally surfaced from existing experience only"],
               },
             },
             job: {
@@ -150,29 +180,47 @@ HARD RULES:
               currentlyMatched: atsBefore.matched.slice(0, 25),
               currentlyMissing: atsBefore.missing.slice(0, 25),
               scoreBefore: atsBefore.score,
+              note: "Missing keywords must NOT be invented. Leave them missing.",
             },
             originalResume: options.resumeText.slice(0, 12000),
           }),
         },
       ],
-      { temperature: 0.25 },
+      { temperature: 0.15 },
     );
 
     if (!parsed.tailoredResumeText || parsed.tailoredResumeText.trim().length < 80) {
       return fallback;
     }
 
-    const tailoredResumeText = parsed.tailoredResumeText.trim();
+    const guarded = guardAgainstHallucination(options.resumeText, parsed.tailoredResumeText.trim());
+    const tailoredResumeText = guarded.text;
     const atsAfter = scoreAtsMatch(tailoredResumeText, atsBefore.keywords);
+
+    const changeSummary = [
+      parsed.changeSummary?.trim() ||
+        `Tailored for ${options.job.title}. ATS ${atsBefore.score}% → ${atsAfter.score}%.`,
+      guarded.log.length
+        ? `Post-guard removed ${guarded.log.length} unsupported fragment(s) not grounded in your resume.`
+        : "Passed anti-hallucination guard (no unsupported employers/skills/degrees added).",
+    ].join(" ");
+
+    const tailoredLatex = tailoredResumeToLatex({
+      fullName,
+      company: options.job.company,
+      title: options.job.title,
+      resumeText: tailoredResumeText,
+    });
 
     return {
       tailoredResumeText,
-      changeSummary:
-        parsed.changeSummary?.trim() ||
-        `Tailored for ${options.job.title}. ATS ${atsBefore.score}% → ${atsAfter.score}%.`,
+      tailoredLatex,
+      changeSummary,
       resumeSuggestions: parsed.resumeSuggestions?.trim() || fallback.resumeSuggestions,
       atsBefore,
       atsAfter,
+      atsExplanation: atsAfter.explanation || changeSummary,
+      guardLog: guarded.log,
     };
   } catch {
     return fallback;

@@ -38,23 +38,32 @@ async function persistTailoredResume(
   resumeText: string,
   job: Parameters<typeof tailorResumeForRole>[0]["job"],
   llm?: LlmConfig,
+  fullName?: string,
 ) {
   const tailored = await tailorResumeForRole({
     resumeText,
     job,
     llm,
+    fullName,
   });
+
+  if (tailored.guardLog.length) {
+    console.info(`[pipeline] hallucination guard for role ${roleId}:`, tailored.guardLog.slice(0, 15));
+  }
 
   const updated = await prisma.role.update({
     where: { id: roleId },
     data: {
       resumeSuggestions: tailored.resumeSuggestions,
       tailoredResumeText: tailored.tailoredResumeText,
+      tailoredLatex: tailored.tailoredLatex,
       atsScoreBefore: tailored.atsBefore.score,
       atsScoreAfter: tailored.atsAfter.score,
       atsKeywordsMatched: JSON.stringify(tailored.atsAfter.matched),
       atsKeywordsMissing: JSON.stringify(tailored.atsAfter.missing),
+      atsExplanation: tailored.atsExplanation,
       resumeChangeSummary: tailored.changeSummary,
+      resumeGuardLog: JSON.stringify(tailored.guardLog.slice(0, 40)),
     },
   });
 
@@ -191,7 +200,7 @@ export async function runJobHuntPipeline(options: {
   try {
     await appendLog(run.id, {
       stage: "scout",
-      message: `Scouting newly opened US roles from career portals (location: ${profile.locationPref || "United States"}, experience: ${profile.experienceYears} yrs${profile.visaSponsorship ? ", visa sponsorship needed" : ""})…`,
+      message: `Stage 1/5 — Scouting open & newly posted roles from connected boards (not the whole internet). Location: ${profile.locationPref || "United States"}, experience: ${profile.experienceYears} yrs${profile.visaSponsorship ? ", visa sponsorship needed" : ""}, max age ${profile.maxAgeDays}d…`,
       at: new Date().toISOString(),
     });
 
@@ -226,13 +235,13 @@ export async function runJobHuntPipeline(options: {
 
     await appendLog(run.id, {
       stage: "scout",
-      message: `Found ${scouted.length} fresh roles matching your brief`,
+      message: `Found ${scouted.length} open roles from connected boards matching your brief`,
       at: new Date().toISOString(),
     });
 
     await appendLog(run.id, {
       stage: "rank",
-      message: "Ranking roles against your resume…",
+      message: "Stage 2/5 — LLM analyzing & ranking roles against your real resume (no invented skills)…",
       at: new Date().toISOString(),
     });
 
@@ -304,7 +313,7 @@ export async function runJobHuntPipeline(options: {
 
       await appendLog(run.id, {
         stage: "resume",
-        message: `ATS-tailoring resume for ${job.title} @ ${job.company}`,
+        message: `Stage 3/5 — ATS-tailoring + LaTeX/PDF for ${job.title} @ ${job.company} (facts from your resume only)`,
         at: new Date().toISOString(),
       });
 
@@ -313,6 +322,7 @@ export async function runJobHuntPipeline(options: {
         profile.resumeText,
         job,
         profileLlm(profile),
+        profile.fullName,
       );
 
       // Autofill / auto-apply for high-fit roles when enabled
@@ -351,7 +361,7 @@ export async function runJobHuntPipeline(options: {
 
       await appendLog(run.id, {
         stage: "contacts",
-        message: `Enriching contacts for ${job.title} @ ${job.company}`,
+        message: `Stage 4/5 — Contacts + outreach drafts for ${job.title} @ ${job.company}`,
         at: new Date().toISOString(),
       });
 
@@ -413,7 +423,7 @@ export async function runJobHuntPipeline(options: {
 
     await appendLog(run.id, {
       stage: "done",
-      message: `Completed. Ranked ${top.length} roles, ${applyCount} autofilled/applied, ${contactCount} contacts, ${draftCount} drafts.`,
+      message: `Stage 5/5 done. Ranked ${top.length} roles from connected boards, tailored LaTeX/PDF resumes, ${applyCount} autofilled/applied, ${contactCount} contacts, ${draftCount} drafts.`,
       at: new Date().toISOString(),
     });
 

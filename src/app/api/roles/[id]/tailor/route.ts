@@ -41,16 +41,19 @@ export async function POST(_req: Request, ctx: Ctx) {
     provider: user.profile.llmProvider,
     model: user.profile.llmModel,
     baseUrl: user.profile.llmBaseUrl,
-  });
+  }, user.profile.fullName);
 
   return NextResponse.json({
     ok: true,
     atsScoreBefore: tailored.atsBefore.score,
     atsScoreAfter: tailored.atsAfter.score,
+    atsExplanation: tailored.atsExplanation,
     changeSummary: tailored.changeSummary,
     tailoredResumeText: tailored.tailoredResumeText,
+    tailoredLatex: tailored.tailoredLatex,
     resumeSuggestions: tailored.resumeSuggestions,
     matched: tailored.atsAfter.matched,
     missing: tailored.atsAfter.missing,
+    guardLog: tailored.guardLog,
   });
 }

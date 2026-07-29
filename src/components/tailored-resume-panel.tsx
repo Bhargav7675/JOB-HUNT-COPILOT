@@ -12,8 +12,10 @@ export function TailoredResumePanel({
   suggestions,
   atsBefore,
   atsAfter,
+  atsExplanation,
   matched,
   missing,
+  guardLog,
 }: {
   roleId: string;
   company: string;
@@ -23,8 +25,10 @@ export function TailoredResumePanel({
   suggestions: string | null;
   atsBefore: number | null;
   atsAfter: number | null;
+  atsExplanation: string | null;
   matched: string[];
   missing: string[];
+  guardLog: string[];
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -44,7 +48,11 @@ export function TailoredResumePanel({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Tailor failed");
       setText(data.tailoredResumeText || "");
-      setNote(`ATS ${data.atsScoreBefore}% → ${data.atsScoreAfter}%`);
+      const guardNote =
+        Array.isArray(data.guardLog) && data.guardLog.length
+          ? ` · Guard stripped ${data.guardLog.length} unsupported fragment(s)`
+          : "";
+      setNote(`ATS ${data.atsScoreBefore}% → ${data.atsScoreAfter}%${guardNote}`);
       router.refresh();
     } catch (e) {
       setNote(e instanceof Error ? e.message : "Tailor failed");
@@ -55,17 +63,11 @@ export function TailoredResumePanel({
 
   async function copy() {
     await navigator.clipboard.writeText(text);
-    setNote("Tailored resume copied. Paste into Docs/Word and export PDF if needed.");
+    setNote("Tailored resume copied.");
   }
 
-  function download() {
-    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${company}_${title}_ATS_resume.txt`.replace(/[^\w.\-]+/g, "_").slice(0, 100);
-    a.click();
-    URL.revokeObjectURL(url);
+  function download(format: "pdf" | "tex" | "txt") {
+    window.location.href = `/api/roles/${roleId}/resume?format=${format}`;
   }
 
   return (
@@ -74,7 +76,7 @@ export function TailoredResumePanel({
         <div className="min-w-0 flex-1">
           <h2 className="display text-[1.45rem] sm:text-2xl">ATS-tailored resume</h2>
           <p className="mt-1 text-sm leading-relaxed muted">
-            Keeps your wording. Surfaces keywords you already support — never invents skills.
+            Facts from your uploaded resume only — never invents skills, jobs, or degrees. Download as PDF or LaTeX.
           </p>
         </div>
         <div className="w-full shrink-0 rounded-2xl border border-[var(--line)] bg-white px-3 py-2 text-center sm:w-auto">
@@ -93,6 +95,9 @@ export function TailoredResumePanel({
       </div>
 
       {changeSummary ? <p className="text-sm leading-relaxed">{changeSummary}</p> : null}
+      {atsExplanation ? (
+        <p className="rounded-2xl bg-[#f3f7f9] p-3 text-sm leading-relaxed muted sm:p-4">{atsExplanation}</p>
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
@@ -125,6 +130,15 @@ export function TailoredResumePanel({
         </div>
       </div>
 
+      {guardLog.length ? (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide muted">Anti-hallucination guard</p>
+          <pre className="mt-2 max-h-28 overflow-auto whitespace-pre-wrap rounded-2xl border border-[var(--line)] p-3 text-[11px] leading-relaxed muted">
+            {guardLog.slice(0, 8).join("\n")}
+          </pre>
+        </div>
+      ) : null}
+
       {suggestions ? (
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide muted">Honest improvement notes</p>
@@ -145,16 +159,26 @@ export function TailoredResumePanel({
       </div>
 
       <div className="stack-actions">
-        <button className="btn btn-primary" disabled={!text || busy} onClick={() => void copy()}>
-          Copy tailored resume
+        <button className="btn btn-primary" disabled={!text || busy} onClick={() => download("pdf")}>
+          Download PDF
         </button>
-        <button className="btn btn-secondary" disabled={!text || busy} onClick={download}>
+        <button className="btn btn-secondary" disabled={!text || busy} onClick={() => download("tex")}>
+          Download LaTeX (.tex)
+        </button>
+        <button className="btn btn-secondary" disabled={!text || busy} onClick={() => download("txt")}>
           Download .txt
+        </button>
+        <button className="btn btn-secondary" disabled={!text || busy} onClick={() => void copy()}>
+          Copy text
         </button>
         <button className="btn btn-secondary" disabled={busy} onClick={() => void retailor()}>
           {busy ? "Tailoring…" : "Re-tailor for this role"}
         </button>
       </div>
+      <p className="text-xs muted">
+        Exports for {company} · {title}: text-based PDF (ATS-parseable) and single-column article-class LaTeX. No
+        fabricated content.
+      </p>
       {note ? <p className="text-sm leading-relaxed text-[var(--accent-strong)]">{note}</p> : null}
     </section>
   );

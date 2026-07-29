@@ -130,11 +130,14 @@ model Role {
   skillGaps         String    @default("[]")
   resumeSuggestions String?
   tailoredResumeText String?
+  tailoredLatex     String?
   atsScoreBefore    Int?
   atsScoreAfter     Int?
   atsKeywordsMatched String  @default("[]")
   atsKeywordsMissing String  @default("[]")
+  atsExplanation    String?
   resumeChangeSummary String?
+  resumeGuardLog    String    @default("[]")
   status            String    @default("new")
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt

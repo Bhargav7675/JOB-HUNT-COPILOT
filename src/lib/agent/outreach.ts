@@ -57,7 +57,7 @@ export async function draftOutreach(options: {
         {
           role: "system",
           content:
-            'Write a short, specific, human coffee-chat outreach email. No fluff, no spammy claims, never invent experience. Return JSON {"subject":"...","body":"..."}. Body should be under 120 words.',
+            'Write a short, specific, human coffee-chat outreach email. No fluff, no spammy claims. ONLY reference experience present in resumeHighlights — never invent skills, employers, degrees, or metrics. Return JSON {"subject":"...","body":"..."}. Body should be under 120 words.',
         },
         {
           role: "user",

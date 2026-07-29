@@ -1,5 +1,5 @@
-const CACHE = "jhc-shell-v1";
-const PRECACHE = ["/", "/logo.png", "/icon-192.png", "/icon-512.png", "/manifest.webmanifest"];
+const CACHE = "jhc-shell-v2";
+const PRECACHE = ["/logo.png", "/icon-192.png", "/icon-512.png", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
